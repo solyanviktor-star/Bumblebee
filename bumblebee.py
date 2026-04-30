@@ -69,8 +69,8 @@ def split_into_sentences(text: str) -> list[str]:
     return [p for p in parts if p]
 
 
-def process_phrase(phrase: str, idx: int, yarn: YarnSearch) -> tuple[list[Path], list[str]]:
-    """Return (list of cut part-files, list of full clip_ids used)."""
+def process_phrase(phrase: str, idx: int, yarn: YarnSearch) -> tuple[list[Path], list[str], list[str]]:
+    """Return (cut part-files, used clip_ids, skipped words across all sentences)."""
     print(f"\n[{idx}] {phrase!r}")
 
     sentences = split_into_sentences(phrase)
@@ -78,10 +78,12 @@ def process_phrase(phrase: str, idx: int, yarn: YarnSearch) -> tuple[list[Path],
 
     parts: list[Path] = []
     used: list[str] = []
+    all_skipped: list[str] = []
     sub = 0
     for sn, sentence in enumerate(sentences, start=1):
         print(f"    [{idx}.{sn}] {sentence!r}")
         chunks, skipped = greedy_split(sentence, yarn, CACHE, on_step=_on_step)
+        all_skipped.extend(skipped)
         if not chunks:
             print(f"      nothing matched")
             continue
@@ -94,7 +96,7 @@ def process_phrase(phrase: str, idx: int, yarn: YarnSearch) -> tuple[list[Path],
             parts.append(out_part)
             used.append(ch.clip_id)
             sub += 1
-    return parts, used
+    return parts, used, all_skipped
 
 
 def main() -> int:
@@ -116,6 +118,7 @@ def main() -> int:
         os.environ["BUMBLEBEE_SHUFFLE"] = "1"
 
     final_paths: list[Path] = []
+    skipped_per_variant: list[list[str]] = []
     pp_cm = None
     if args.playphrase:
         from src.playphrase_search import PlayPhraseSearch
@@ -131,10 +134,12 @@ def main() -> int:
                     print(f"\n========== variant {v}/{args.variants} ==========")
                 all_parts: list[Path] = []
                 used_full_ids: list[str] = []
+                variant_skipped: list[str] = []
                 for i, phrase in enumerate(args.phrases, start=1):
-                    parts, used = process_phrase(phrase, i, yarn)
+                    parts, used, skipped = process_phrase(phrase, i, yarn)
                     all_parts.extend(parts)
                     used_full_ids.extend(used)
+                    variant_skipped.extend(skipped)
                 if not all_parts:
                     print(f"\n[variant {v}] no chunks assembled", file=sys.stderr)
                     continue
@@ -147,6 +152,7 @@ def main() -> int:
                 final = OUTPUT / name
                 concat(all_parts, final)
                 final_paths.append(final)
+                skipped_per_variant.append(variant_skipped)
                 print(f"\n+ [{v}] {final}  ({len(all_parts)} chunks)")
                 if args.variants > 1:
                     add_excluded(used_full_ids)
@@ -154,6 +160,24 @@ def main() -> int:
         if pp_cm is not None:
             set_playphrase(None)
             pp_cm.__exit__(None, None, None)
+
+    # Machine-parseable summary so an orchestrator (e.g. Claude) can detect
+    # words that were unreachable in any source and decide whether to retry
+    # with substituted synonyms.
+    import json as _json
+    union_skipped = sorted({w for s in skipped_per_variant for w in s})
+    summary = {
+        "variants_built": len(final_paths),
+        "files": [str(p) for p in final_paths],
+        "skipped_words": union_skipped,
+    }
+    print(f"\nBUMBLEBEE_SUMMARY: {_json.dumps(summary, ensure_ascii=False)}")
+    if union_skipped:
+        print(
+            "\nNOTE: these words were not found in any source (yarn, playphrase, "
+            "local cache). To get full coverage, re-run with each substituted by "
+            f"a contextually-appropriate synonym: {union_skipped}"
+        )
 
     return 0 if final_paths else 1
 
