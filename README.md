@@ -12,11 +12,11 @@ Give it any long phrase — it greedily cuts the line into the longest possible 
 
 ## Demo
 
-[`examples/demo.mp4`](examples/demo.mp4) — generated from this README's tagline. Every spoken word is sliced from a different real movie or TV show, stitched to the millisecond:
-
 > *"Give it any long phrase. It greedily cuts the line into the longest possible runs of words that were actually spoken on screen. Then assembles a final clip from those pieces. Classic fragmovie genre, automated to the millisecond."*
 
-22 chunks across the four sentences, all pulled from yarn.co + playphrase.me, normalised to a single 854x480 / 48 kHz container so the concat is seamless. The only word that didn't cover is *fragmovie* — no actor on record has ever said it.
+https://github.com/solyanviktor-star/Bumblebee/raw/main/examples/demo.mp4
+
+22 chunks across the four sentences, every spoken word from a different real movie or TV show, pulled from yarn.co + playphrase.me, normalised to a single 854x480 / 48 kHz container so the concat is seamless. The only word that didn't cover is *fragmovie* — no actor on record has ever said it.
 
 ## Install as an Agent Skill
 
