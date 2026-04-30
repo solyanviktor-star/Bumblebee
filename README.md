@@ -85,6 +85,25 @@ python bumblebee.py "Sentient is the best" -o sentient.mp4 --variants 5
 
 The final file lands in `output/<name>.mp4`.
 
+## Optional: extra source via playphrase.me
+
+yarn.co's public HTML is hard-capped at 20 unique clips per phrase. Pass
+`--playphrase` to layer in [playphrase.me](https://www.playphrase.me) as a
+secondary source, which often has 10x-1000x more matches per phrase
+(e.g. 73,000 clips for "open" vs yarn's 20). It triggers only when yarn
+exhausts a chunk, and its API delivers word-timestamps natively so playphrase
+clips skip the faster-whisper step entirely.
+
+```bash
+pip install playwright
+playwright install chromium    # one-time, ~120 MB
+
+python bumblebee.py "any phrase" --playphrase
+```
+
+Costs ~15 seconds upfront for browser bootstrap; each subsequent search is
+sub-second.
+
 ## Optional environment variables
 
 | Variable | Default | Purpose |

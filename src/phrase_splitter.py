@@ -47,6 +47,21 @@ _EXCLUDED: set[str] = set()
 # redoing the same fruitless yarn + transcribe round-trips on later variants.
 _NEGATIVE_CACHE: set[str] = set()
 
+# Optional second source. When set (via set_playphrase), greedy queries it
+# after yarn exhausts a chunk. playphrase clips arrive with word-level
+# timestamps from the API itself, so they don't need a faster-whisper pass.
+_PLAYPHRASE = None
+
+
+def set_playphrase(pp) -> None:
+    """Register a PlayPhraseSearch instance as a secondary source.
+
+    Pass `None` to disable. Caller owns the lifecycle (open the search
+    session in a `with` block and call this from inside).
+    """
+    global _PLAYPHRASE
+    _PLAYPHRASE = pp
+
 
 def add_excluded(ids) -> None:
     _EXCLUDED.update(ids)
@@ -194,7 +209,33 @@ def _try_chunk(
             else:
                 return result
 
-    # 4. Last resort — reuse an already-used local-cache clip, but only for
+    # 4. Optional playphrase fallback. Triggered only when yarn produced no
+    # match — playphrase has a much larger pool especially for rare words,
+    # and its API delivers word-timestamps natively so we skip transcription.
+    if _PLAYPHRASE is not None:
+        try:
+            pp_clips = _PLAYPHRASE.search(text, max_results=5)
+        except Exception as e:
+            print(f"        ! playphrase search failed for {text!r}: {e}")
+            pp_clips = []
+        if pp_clips:
+            print(f"        . playphrase: {len(pp_clips)} clips for {text!r}")
+        for c in pp_clips:
+            if c.clip_id in excluded:
+                continue
+            from .playphrase_search import cache_clip as pp_cache
+            path = pp_cache(c, cache_dir)
+            if path is None:
+                continue
+            match = find_phrase(c.words, text)
+            if match is None or match.score < 1.0:
+                continue
+            return Chunk(
+                text=text, clip_id=c.clip_id, mp4=path,
+                start=match.start, end=match.end,
+            )
+
+    # 5. Last resort — reuse an already-used local-cache clip, but only for
     # single-word chunks. Reusing a multi-word chunk would make greedy stop
     # exploring shorter splits that may still have fresh candidates, which
     # collapses variant diversity for the entire tail of the phrase. For a

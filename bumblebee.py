@@ -39,7 +39,9 @@ _builtins.print = _flushed_print
 
 from src.concat import concat
 from src.cutter import cut
-from src.phrase_splitter import Chunk, add_excluded, greedy_split, reset_excluded
+from src.phrase_splitter import (
+    Chunk, add_excluded, greedy_split, reset_excluded, set_playphrase,
+)
 from src.yarn_search import YarnSearch
 
 ROOT = Path(__file__).parent
@@ -103,37 +105,55 @@ def main() -> int:
                         help="How many distinct variants to generate. >1 enables mix mode: every "
                              "variant avoids clips used by previous ones. Files are named "
                              "<output>_v1.mp4, _v2.mp4, ...")
+    parser.add_argument("--playphrase", action="store_true",
+                        help="Add playphrase.me as a second source via headless Playwright. "
+                             "Adds ~15s bootstrap; massively expands the pool for rare words "
+                             "(73k clips for 'open' vs yarn's 20). Requires playwright and a "
+                             "Chromium install (pip install playwright && playwright install chromium).")
     args = parser.parse_args()
 
     if args.variants > 1:
         os.environ["BUMBLEBEE_SHUFFLE"] = "1"
 
     final_paths: list[Path] = []
-    with YarnSearch() as yarn:
-        for v in range(1, args.variants + 1):
-            if args.variants > 1:
-                print(f"\n========== variant {v}/{args.variants} ==========")
-            all_parts: list[Path] = []
-            used_full_ids: list[str] = []
-            for i, phrase in enumerate(args.phrases, start=1):
-                parts, used = process_phrase(phrase, i, yarn)
-                all_parts.extend(parts)
-                used_full_ids.extend(used)
-            if not all_parts:
-                print(f"\n[variant {v}] no chunks assembled", file=sys.stderr)
-                continue
-            if args.variants > 1:
-                stem = Path(args.output).stem
-                ext = Path(args.output).suffix or ".mp4"
-                name = f"{stem}_v{v}{ext}"
-            else:
-                name = args.output
-            final = OUTPUT / name
-            concat(all_parts, final)
-            final_paths.append(final)
-            print(f"\n+ [{v}] {final}  ({len(all_parts)} chunks)")
-            if args.variants > 1:
-                add_excluded(used_full_ids)
+    pp_cm = None
+    if args.playphrase:
+        from src.playphrase_search import PlayPhraseSearch
+        pp_cm = PlayPhraseSearch()
+        pp_cm.__enter__()
+        set_playphrase(pp_cm)
+        print("playphrase: bootstrap done, secondary source active")
+
+    try:
+        with YarnSearch() as yarn:
+            for v in range(1, args.variants + 1):
+                if args.variants > 1:
+                    print(f"\n========== variant {v}/{args.variants} ==========")
+                all_parts: list[Path] = []
+                used_full_ids: list[str] = []
+                for i, phrase in enumerate(args.phrases, start=1):
+                    parts, used = process_phrase(phrase, i, yarn)
+                    all_parts.extend(parts)
+                    used_full_ids.extend(used)
+                if not all_parts:
+                    print(f"\n[variant {v}] no chunks assembled", file=sys.stderr)
+                    continue
+                if args.variants > 1:
+                    stem = Path(args.output).stem
+                    ext = Path(args.output).suffix or ".mp4"
+                    name = f"{stem}_v{v}{ext}"
+                else:
+                    name = args.output
+                final = OUTPUT / name
+                concat(all_parts, final)
+                final_paths.append(final)
+                print(f"\n+ [{v}] {final}  ({len(all_parts)} chunks)")
+                if args.variants > 1:
+                    add_excluded(used_full_ids)
+    finally:
+        if pp_cm is not None:
+            set_playphrase(None)
+            pp_cm.__exit__(None, None, None)
 
     return 0 if final_paths else 1
 
