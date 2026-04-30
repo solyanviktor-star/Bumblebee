@@ -1,6 +1,7 @@
-"""Склейка нескольких mp4 через FFmpeg concat demuxer.
+"""Concatenate several mp4s through FFmpeg's concat demuxer.
 
-Куски уже перекодированы в одном кодеке (см. cutter.py), так что -c copy безопасен.
+Parts have already been re-encoded with the same codec (see cutter.py),
+so -c copy is safe and instantaneous.
 """
 from __future__ import annotations
 
@@ -16,12 +17,12 @@ def _ffmpeg_bin() -> str:
 
 def concat(parts: list[Path], dst: Path) -> Path:
     if not parts:
-        raise ValueError("Нет кусков для склейки")
+        raise ValueError("No parts to concatenate")
     dst.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
         for p in parts:
-            # FFmpeg concat list: пути в одинарных кавычках, экранировать backslash
+            # FFmpeg concat list: paths in single quotes, escape backslashes
             safe = str(p.resolve()).replace("\\", "/").replace("'", r"'\''")
             f.write(f"file '{safe}'\n")
         list_path = f.name

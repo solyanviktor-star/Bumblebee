@@ -1,26 +1,24 @@
 """Greedy longest-match splitter.
 
-Алгоритм:
-  i = 0
-  while i < len(words):
-      for chunk_len in range(min(MAX_CHUNK, n - i), 0, -1):
-          chunk = words[i : i + chunk_len]
-          если найден клип, где эта подпоследовательность звучит подряд → берём
-              i += chunk_len
-              break
-      else:
-          # одно слово не нашлось — пропускаем
-          i += 1
+Algorithm:
+    i = 0
+    while i < len(words):
+        for chunk_len in range(min(MAX_CHUNK, n - i), 0, -1):
+            chunk = words[i : i + chunk_len]
+            if a clip exists where this exact subsequence is spoken in order:
+                take it, i += chunk_len, break
+        else:
+            # single word not found anywhere -> skip
+            i += 1
 
-«Найден клип» = yarn.co отдал кандидатов, мы скачали + транскрибировали + word_matcher
-вернул score == 1.0 (все слова куска подряд).
+"Found a clip" means yarn.co returned candidates, we downloaded + transcribed
++ word_matcher returned score == 1.0 (every word of the chunk in order).
 """
 from __future__ import annotations
 
 import os
 import random
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,8 +29,8 @@ from .yarn_search import YarnSearch
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9']+")
 
-# Глобальный set исключённых clip_id — для генерации непересекающихся вариантов.
-# Заполняется снаружи через add_excluded() / reset_excluded().
+# Global set of excluded clip_ids — used to generate non-overlapping variants.
+# Populated externally via add_excluded() / reset_excluded().
 _EXCLUDED: set[str] = set()
 
 
@@ -62,8 +60,8 @@ def _tokenize(phrase: str) -> list[str]:
 
 
 def _check_candidate(clip_id: str, text: str, cache_dir: Path) -> Chunk | None:
-    """Скачать + транскрибировать + матчить один клип. None если не подходит.
-    Любая ошибка логируется, чтобы не было silent skip."""
+    """Download + transcribe + match a single clip. Returns None if it doesn't fit.
+    Any error is logged so we never silently skip a candidate."""
     try:
         mp4 = download_clip(clip_id, cache_dir)
         words = transcribe_words(mp4)
@@ -82,42 +80,39 @@ def _try_chunk(
     cache_dir: Path,
     max_candidates: int = 8,
 ) -> Chunk | None:
-    """Есть ли клип, где эта подпоследовательность звучит подряд?
-    Серийно перебираем кандидатов — на первом exact-match выходим.
-    (Параллелизм через Groq client не thread-safe — оборачивался silent-фейлом.)
+    """Is there a clip where this subsequence is spoken in order?
+    We iterate candidates serially — return on the first exact match.
 
-    Если переменная BAMBLBE_SHUFFLE=1 — перемешиваем кандидатов случайно (для
-    генерации разнообразных вариантов нарезки на одной и той же фразе).
+    If env var BUMBLEBEE_SHUFFLE=1 is set, candidates are shuffled randomly,
+    which lets the same phrase produce different cuts across variants.
     """
     text = " ".join(chunk_words)
     clip_ids = yarn.search(text, max_results=max_candidates)
     if not clip_ids:
-        print(f"        · yarn: 0 ids for {text!r}")
+        print(f"        . yarn: 0 ids for {text!r}")
         return None
-    if os.environ.get("BAMBLBE_SHUFFLE") == "1":
+    if os.environ.get("BUMBLEBEE_SHUFFLE") == "1":
         random.shuffle(clip_ids)
-    # Пропускаем clip_id, уже использованные в предыдущих вариантах (mix-mode).
-    # Если все исключены — fallback: пробуем как обычно.
+    # Skip clip_ids already used in previous variants (mix-mode).
+    # If everything is excluded, fall back to the unfiltered list.
     excluded = _excluded_ids()
     if excluded:
         filtered = [c for c in clip_ids if c not in excluded]
         if filtered:
             clip_ids = filtered
-    print(f"        · yarn: {len(clip_ids)} ids for {text!r}")
+    print(f"        . yarn: {len(clip_ids)} ids for {text!r}")
 
     for clip_id in clip_ids:
         result = _check_candidate(clip_id, text, cache_dir)
         if result is None:
-            # узнаем что транскрипт показал — для диагностики
+            # log what the transcript actually contained — useful for debugging
             try:
-                from .transcriber import transcribe_words
-                from .downloader import download_clip
                 mp4 = download_clip(clip_id, cache_dir)
                 words = transcribe_words(mp4)
                 t = " ".join(w["word"] for w in words)
-                print(f"        · {clip_id[:8]} no-match. transcript: {t!r}")
+                print(f"        . {clip_id[:8]} no-match. transcript: {t!r}")
             except Exception as e:
-                print(f"        · {clip_id[:8]} debug-log fail: {e}")
+                print(f"        . {clip_id[:8]} debug-log fail: {e}")
         else:
             return result
     return None
@@ -130,9 +125,9 @@ def greedy_split(
     max_chunk: int = 6,
     on_step=None,
 ) -> tuple[list[Chunk], list[str]]:
-    """Вернуть (найденные куски в порядке, пропущенные слова).
+    """Return (matched chunks in order, words that had to be skipped).
 
-    on_step(stage, **kwargs) — callback для прогресса (опц.)
+    on_step(stage, **kwargs) is an optional progress callback.
     """
     words = _tokenize(phrase)
     chunks: list[Chunk] = []

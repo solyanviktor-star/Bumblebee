@@ -1,121 +1,114 @@
 # Bumblebee
 
-Хирургическая нарезка фраз из реальных фильмов и сериалов через [yarn.co](https://yarn.co).
+Surgical phrase splicing from real movies and TV shows via [yarn.co](https://yarn.co).
 
-Дай скиллу любую длинную фразу — он жадно режет её на максимальные подпоследовательности слов, которые реально звучали на экране, и собирает финальный ролик из этих кусков. Классический жанр fragmovie, только автоматический и до миллисекунды.
+Give it any long phrase — it greedily cuts the line into the longest possible runs of words that were actually spoken on screen, then assembles a final clip from those pieces. Classic fragmovie genre, automated to the millisecond.
 
-[See English version below.](#bumblebee-en)
+100% local, no API keys, no cloud calls. Speech recognition runs on-device with [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
 
----
-
-## Как это работает
+## How it works
 
 ```
-"Так я не понял, почему мой Claude всегда банит. Я заебался покупать аккаунты."
-        ↓ Groq Llama-3.3-70b — разговорный перевод (если RU)
-        ↓
 "I don't get it, why does my Claude keep getting banned. I'm sick of buying new accounts."
-        ↓ split по «.!?» → отдельная обработка каждого предложения
-        ↓
-[ greedy splitter — режем на куски макс по 6 слов ]
-        ↓
-   "I don't get it why"          ──┐
-   "does"                        ──┤   для каждого куска:
-   "Claude"                      ──┤     getyarn.io → 8 кандидатов  (curl_cffi, обход CF)
-   "keep getting"                ──┤     download mp4
-   "I'm sick of"                 ──┤     Groq Whisper word-timestamps
-   "new accounts"                ──┤     word_matcher: точное совпадение
-   ...                              │     FFmpeg cut по миллисекундам
-                                    ↓
-                          concat в output/final.mp4
-                          (с короткими audio fades на стыках +
-                          паузой ~180ms между предложениями)
+        |
+        v   split on .!? -> each sentence handled independently
+        |
+[ greedy splitter — chunks of up to 6 words ]
+        |
+   "I don't get it why"          --+
+   "does"                        --+   for each chunk:
+   "Claude"                      --+     getyarn.io -> 8 candidates  (curl_cffi, bypasses CF)
+   "keep getting"                --+     download mp4
+   "I'm sick of"                 --+     faster-whisper word-timestamps (local, no API)
+   "new accounts"                --+     word_matcher: exact match
+   ...                              |    FFmpeg cut to the millisecond
+                                    v
+                          concat into output/final.mp4
+                          (with short audio fades at every splice +
+                          a ~180ms breathing pause between sentences)
 ```
 
-Слова, которых никто не произнёс ни в одном клипе — пропускаются.
+Words that nobody ever said in any clip are skipped.
 
-## Mix-режим: несколько вариантов одной фразы
+## Mix mode: multiple takes on one phrase
 
 ```bash
 python bumblebee.py "Sentient is the best company" --variants 4 -o sentient.mp4
 ```
 
-Сгенерирует 4 файла (`sentient_v1.mp4`, `_v2`, `_v3`, `_v4`), где **каждый вариант избегает клипов из предыдущих**. Получаются разные монтажи с разными актёрами, фильмами, и иногда даже разной структурой нарезки.
+Generates 4 files (`sentient_v1.mp4`, `_v2`, `_v3`, `_v4`) where **every variant avoids clips already used by previous ones**. You get different cuts with different actors, different movies, sometimes even different segmentation of the same phrase.
 
-## Установка
+## Install
 
 ```bash
-git clone https://github.com/<your-user>/bumblebee.git
-cd bumblebee
+git clone https://github.com/solyanviktor-star/Bumblebee.git
+cd Bumblebee
 pip install -r requirements.txt
-copy .env.example .env  # вписать GROQ_API_KEY
 ```
 
-Также нужен **FFmpeg** в PATH (или путь в `FFMPEG_BIN` env).
+You also need **FFmpeg** on PATH (or set `FFMPEG_BIN` to its path).
 
-## API ключ
+That's it. No API keys, no `.env`, nothing else to configure. The first run downloads the Whisper model (~244 MB for `small.en`) into the HuggingFace cache; every run after that is fully offline.
 
-Только один — Groq:
-- `GROQ_API_KEY` — для Llama-3.3-70b (перевод) и Whisper-large-v3 (транскрипция)
+## Requirements
 
-Получить бесплатно на https://console.groq.com.
+- Python 3.9+
+- FFmpeg
+- ~250 MB free disk space for the speech model
 
-## Использование
+No GPU required. If you have a CUDA GPU, set `WHISPER_DEVICE=cuda` for a roughly 5x speedup on transcription.
+
+## Usage
 
 ```bash
-# Одно видео из фразы
-python bumblebee.py "Любая фраза на русском или английском"
+# One video from one phrase
+python bumblebee.py "I am your father"
 
-# Несколько фраз, каждая обрабатывается отдельно
+# Several phrases — each is processed and they're concatenated in order
 python bumblebee.py "I am your father" "Houston we have a problem"
 
-# 5 разных монтажей без повторений клипов
+# 5 different cuts of the same phrase, no clip reuse
 python bumblebee.py "Sentient is the best" -o sentient.mp4 --variants 5
 ```
 
-Финальный файл попадает в `output/<имя>.mp4`.
+The final file lands in `output/<name>.mp4`.
 
-## Структура
+## Optional environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WHISPER_MODEL` | `small.en` | Model name. Use `base.en` for speed, `medium.en` for accuracy. |
+| `WHISPER_DEVICE` | `cpu` | Set to `cuda` if you have an NVIDIA GPU. |
+| `WHISPER_COMPUTE_TYPE` | `int8` (cpu) / `float16` (cuda) | Inference quantization. |
+| `FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary if not on PATH. |
+
+## Project layout
 
 ```
-bumblebee/
-├── bumblebee.py             ← CLI entry point
-├── SKILL.md                 ← Claude Code skill manifest
-├── src/
-│   ├── translator.py        ← RU → EN через Groq Llama-3.3-70b (киношно-разговорный стиль)
-│   ├── phrase_splitter.py   ← greedy longest-match с опциональным shuffling/exclusion
-│   ├── yarn_search.py       ← фраза → clip_id (curl_cffi, обход Cloudflare)
-│   ├── downloader.py        ← clip_id → локальный mp4 (curl_cffi, обход CF на y.yarn.co)
-│   ├── transcriber.py       ← Groq Whisper large-v3 word-timestamps + кэш
-│   ├── word_matcher.py      ← точные start/end нужных слов с fuzzy на контракциях
-│   ├── cutter.py            ← FFmpeg обрезка + audio fade на стыках
-│   └── concat.py            ← concat demuxer
-├── cache/                   ← скачанные клипы и транскрипты (переиспользуются)
-└── output/                  ← финальные ролики и куски в _parts/
+Bumblebee/
+|- bumblebee.py             <- CLI entry point
+|- SKILL.md                 <- Claude Code skill manifest
+|- src/
+|  |- phrase_splitter.py    <- greedy longest-match with optional shuffling/exclusion
+|  |- yarn_search.py        <- phrase -> clip_ids (curl_cffi, bypasses Cloudflare)
+|  |- downloader.py         <- clip_id -> local mp4 (curl_cffi, bypasses CF on y.yarn.co)
+|  |- transcriber.py        <- faster-whisper word-timestamps + cache
+|  |- word_matcher.py       <- exact start/end of target words with apostrophe-fuzz
+|  |- cutter.py             <- FFmpeg cut + audio fade at splice points
+|  |- concat.py             <- concat demuxer
+|- cache/                   <- downloaded clips and transcripts (reused across runs)
+|- output/                  <- final reels and intermediate parts in _parts/
 ```
 
-## Известные ограничения
+## Known limitations
 
-- yarn.co только англоязычный → русский вход всегда переводится
-- Whisper иногда транскрибирует «I», «my», «a» в составе длинной фразы → одиночные короткие слова чаще всего пропускаются
-- Порядок слов строгий: «can we» и «we can» — разные совпадения (swap-fuzzy в TODO)
-- yarn.co защищён Cloudflare. Решено через `curl_cffi` с `impersonate='chrome'` (имитирует TLS-fingerprint)
+- yarn.co indexes English-language media only.
+- Whisper sometimes transcribes short tokens like "I", "a", "my" as part of a longer word, so single short words tend to get skipped.
+- Word order is strict: "can we" and "we can" are different matches (a swap-fuzzy is on the TODO list).
+- yarn.co sits behind Cloudflare. Solved with `curl_cffi` and `impersonate='chrome'` (which replays a real Chrome TLS fingerprint).
 
----
+## License
 
-# Bumblebee (EN) <a id="bumblebee-en"></a>
-
-Surgical phrase splicing from real movies and TV shows via yarn.co.
-
-Give the script any long phrase — it greedily slices it into the longest possible subsequences of words that were actually spoken on screen, and assembles the final clip out of those pieces. Classic fragmovie genre, automated to the millisecond.
-
-```bash
-pip install -r requirements.txt
-copy .env.example .env  # add GROQ_API_KEY
-python bumblebee.py "Any phrase in English (or Russian)"
-python bumblebee.py "Sentient is the best" --variants 5  # 5 unique remixes
-```
-
-Needs **FFmpeg** in PATH and a free Groq API key from https://console.groq.com.
+MIT — see `LICENSE`.
 
 Built end-to-end with [Claude Code](https://claude.com/claude-code).

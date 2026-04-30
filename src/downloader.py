@@ -1,7 +1,8 @@
-"""Скачка mp4 клипа yarn.co по clip_id.
+"""Download a yarn.co mp4 clip by clip_id.
 
-CF на y.yarn.co режет httpx по TLS-fingerprint. curl_cffi с impersonate='chrome'
-ставит TLS как у настоящего Chrome — проходит без всяких challenge-кукисов.
+Cloudflare on y.yarn.co rejects plain httpx based on TLS fingerprint.
+curl_cffi with impersonate='chrome' replays a real Chrome TLS handshake,
+which passes without any challenge cookies.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ _HEADERS = {
 
 
 def download_clip(clip_id: str, cache_dir: Path) -> Path:
-    """Скачать клип в cache_dir, вернуть путь. Если уже есть — пропустить."""
+    """Download a clip into cache_dir and return the path. Skipped if already cached."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     target = cache_dir / f"{clip_id}.mp4"
     if target.exists() and target.stat().st_size > 1024:

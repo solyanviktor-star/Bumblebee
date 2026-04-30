@@ -1,7 +1,8 @@
-"""FFmpeg обрезка клипа по [start, end] в секундах.
+"""FFmpeg cut by [start, end] in seconds.
 
-Перекодируем (re-encode), а не -c copy: yarn-клипы короткие, а -ss перед -i на keyframes
-даёт неточный старт на сотни миллисекунд. Точность важнее скорости.
+We re-encode rather than -c copy: yarn clips are short, and -ss before -i
+only seeks to the nearest keyframe, drifting hundreds of milliseconds.
+Accuracy beats speed here.
 """
 from __future__ import annotations
 
@@ -21,11 +22,11 @@ def cut(
     dst: Path,
     is_sentence_end: bool = False,
 ) -> Path:
-    """Вырезать [start, end] из src в dst.
+    """Cut [start, end] from src into dst.
 
-    Audio fade in/out короткий по умолчанию (убирает щелчки между склейками).
-    Если is_sentence_end=True — fade-out длиннее, даёт естественную паузу-передышку
-    на границе предложений в финальном ролике.
+    Audio fade in/out is short by default (kills clicks at splice boundaries).
+    When is_sentence_end=True the fade-out is longer, giving a natural breathing
+    pause at sentence boundaries in the final reel.
     """
     duration = max(0.05, end - start)
     dst.parent.mkdir(parents=True, exist_ok=True)

@@ -1,49 +1,48 @@
 ---
 name: bumblebee
-description: Хирургическая нарезка фраз из реальных фильмов и сериалов через yarn.co. Любую длинную фразу режет на максимально длинные подпоследовательности слов, которые звучали в кино, и собирает финальный ролик где каждое слово произнесено реальным актёром. Триггеры — "нарежь фразу из кино", "сделай fragmovie", "собери видео из чужих слов", "bumblebee". Поддерживает русский и английский ввод (RU автоматически переводится Llama). Mix-режим (--variants N) генерирует несколько разных монтажей одной фразы без повторений клипов.
+description: Surgical phrase splicing from real movies and TV shows via yarn.co. Takes any English phrase and slices it into the longest possible runs of words actually spoken on screen, then assembles a final reel where every word is delivered by a real actor. Triggers — "splice a line from movies", "make a fragmovie", "build a video from someone else's words", "bumblebee". Runs fully local with faster-whisper — no API keys. Mix mode (--variants N) generates several distinct cuts of one phrase without reusing clips.
 ---
 
 # Bumblebee Skill
 
-Скилл для автоматической сборки fragmovie-видео из произвольной фразы.
+A skill that automatically assembles a fragmovie-style video from an arbitrary phrase.
 
-## Когда активировать
-- Пользователь хочет «нарезать фразу из реальных фильмов»
-- Нужно собрать видео где чужие актёры произносят его текст
-- Запросы вида «сделай fragmovie», «склей мою фразу из кино», «bumblebee»
+## When to activate
+- The user wants to "splice a phrase out of real movies"
+- The user wants a video where other actors speak their text
+- Requests like "make a fragmovie", "stitch my line out of cinema", "bumblebee"
 
-## Что делает
-1. Принимает текст (RU или EN)
-2. Если RU — переводит на разговорный английский через Groq Llama-3.3-70b
-3. Разбивает по предложениям, в каждом жадно ищет максимальные подпоследовательности слов на yarn.co
-4. Скачивает кандидаты (mp4), транскрибирует Groq Whisper word-timestamps, проверяет точное совпадение
-5. Вырезает FFmpeg по миллисекундам, склеивает с короткими fade-in/out на стыках, паузами между предложениями
-6. Опционально — генерирует N разных вариантов без повторений клипов (`--variants N`)
+## What it does
+1. Takes English text (one or more phrases as separate args)
+2. Splits each phrase by sentence terminators (.!?), processes sentences independently
+3. Greedy longest-match: for each sentence, finds the largest contiguous chunks of words that exist on yarn.co
+4. Downloads candidate mp4s, transcribes them locally with faster-whisper (word-level timestamps), checks for exact match
+5. Cuts with FFmpeg to millisecond precision, concatenates with short fade-in/out at splices and breathing pauses between sentences
+6. Optional: generates N distinct variants without clip reuse via `--variants N`
 
-## Зависимости
-- Python 3.11+ с пакетами `curl_cffi`, `groq`, `python-dotenv`
-- FFmpeg в PATH или путь в `FFMPEG_BIN`
-- `GROQ_API_KEY` в `.env`
+## Dependencies
+- Python 3.9+ with `curl_cffi`, `faster-whisper`
+- FFmpeg on PATH (or `FFMPEG_BIN` env var)
+- No API keys required
 
-## Запуск
+## Run
 ```bash
-python bumblebee.py "Любая фраза на русском или английском" -o myvideo.mp4
+python bumblebee.py "I am your father" -o father.mp4
 python bumblebee.py "Sentient is the best" -o sentient.mp4 --variants 5
 ```
 
-## Архитектура
+## Architecture
 - `bumblebee.py` — CLI
-- `src/translator.py` — Groq Llama, RU→EN с разговорным стилем
-- `src/yarn_search.py` — curl_cffi (impersonate=chrome) на getyarn.io, обходит Cloudflare
-- `src/downloader.py` — скачка mp4 через curl_cffi (yarn.co требует TLS-fingerprint Chrome)
-- `src/transcriber.py` — Groq Whisper large-v3 + word-timestamps + кэш
-- `src/word_matcher.py` — точный матч с fuzzy на префиксах/контракциях
-- `src/phrase_splitter.py` — greedy longest-match, опциональный shuffling и exclusion для variants
-- `src/cutter.py` — FFmpeg обрезка с audio fade на стыках
+- `src/yarn_search.py` — curl_cffi (impersonate=chrome) against getyarn.io, bypasses Cloudflare
+- `src/downloader.py` — mp4 download via curl_cffi (yarn.co requires a Chrome TLS fingerprint)
+- `src/transcriber.py` — faster-whisper local inference + word-timestamps + JSON cache
+- `src/word_matcher.py` — exact match with apostrophe / prefix fuzzing
+- `src/phrase_splitter.py` — greedy longest-match, optional shuffling and clip exclusion for variants
+- `src/cutter.py` — FFmpeg cut with audio fade at splice points
 - `src/concat.py` — concat demuxer
 
-## Известные ограничения
-- yarn.co только англоязычный → RU вход всегда переводится
-- Whisper иногда транскрибирует одно слово как часть длинной фразы → одиночные слова («I», «a», «my») часто пропускаются — это естественное ограничение
-- `4e5bfded` и подобные «топовые» клипы могут быть в каждой выдаче yarn — потому в первом варианте они и забираются
-- Порядок слов важен: `can we` не матчится `we can` (см. swap-fuzzy todo)
+## Known limitations
+- yarn.co indexes English-language media only
+- Whisper sometimes folds short tokens ("I", "a", "my") into longer words, so isolated short words frequently get skipped — this is an inherent limitation of word-level recognition
+- A handful of "popular" yarn clips (e.g. `4e5bfded`) appear in many search results and tend to be picked first; mix mode (`--variants`) is the workaround
+- Word order is strict: `can we` does not match `we can` (swap-fuzzy is in the TODO list)

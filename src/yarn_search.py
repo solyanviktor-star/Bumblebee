@@ -1,7 +1,7 @@
-"""Поиск фразы на yarn.co (getyarn.io) через curl_cffi с TLS-fingerprint Chrome.
+"""Search getyarn.io for a phrase via curl_cffi with a Chrome TLS fingerprint.
 
-Это быстрее и надёжнее Playwright: один HTTP-запрос на одну фразу, никакого
-троттлинга/persistent-browser-износа, проходит Cloudflare без проблем.
+Faster and more reliable than Playwright: one HTTP request per phrase, no
+persistent browser to throttle, and Cloudflare lets it through cleanly.
 """
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ _HEADERS = {
 
 
 class YarnSearch:
-    """Сохраняем интерфейс контекст-менеджера, чтобы не ломать вызывающий код."""
+    """Context-manager-shaped, kept that way so callers don't have to change."""
 
     def __init__(self, headless: bool = True):
-        # параметр headless оставлен для совместимости — тут он игнорируется
+        # The headless arg is kept for backwards compatibility; ignored here.
         pass
 
     def __enter__(self) -> "YarnSearch":
@@ -32,7 +32,7 @@ class YarnSearch:
         pass
 
     def search(self, phrase: str, max_results: int = 20) -> list[str]:
-        """Список clip_id для фразы. Пусто = ничего не нашлось."""
+        """Return clip_ids for the phrase. Empty list = nothing matched."""
         url = _BASE + quote(phrase)
         try:
             r = curl_requests.get(url, impersonate="chrome", headers=_HEADERS, timeout=30)
