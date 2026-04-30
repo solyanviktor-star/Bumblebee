@@ -1,10 +1,22 @@
 # Bumblebee
 
+[![Available on skills.sh](https://img.shields.io/badge/skills.sh-Bumblebee-black?style=flat-square)](https://skills.sh)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg?style=flat-square)](https://www.python.org/)
+
 Surgical phrase splicing from real movies and TV shows via [yarn.co](https://yarn.co).
 
 Give it any long phrase — it greedily cuts the line into the longest possible runs of words that were actually spoken on screen, then assembles a final clip from those pieces. Classic fragmovie genre, automated to the millisecond.
 
 100% local, no API keys, no cloud calls. Speech recognition runs on-device with [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+
+## Install as an Agent Skill
+
+```bash
+npx skills add solyanviktor-star/Bumblebee
+```
+
+This installs Bumblebee into your agent's skills directory ([Claude Code](https://claude.ai/code), [Cursor](https://cursor.com), [GitHub Copilot](https://github.com/), and [other compatible agents](https://agentskills.io)). The agent will automatically activate it on prompts like *"splice a fragmovie of \<phrase\>"* or *"build a video where actors say \<phrase\>"*.
 
 ## How it works
 
