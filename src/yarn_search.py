@@ -52,20 +52,32 @@ def _parse_clip_ids(html: str) -> list[str]:
     return ids
 
 
+class YarnFetchError(Exception):
+    """Raised when every retry of a yarn HTTP fetch fails (timeout or non-200).
+
+    Distinguishes a hard fetch failure from a successful response that
+    contains no clip ids; callers that care about that difference (e.g.
+    rarity probing) catch this rather than silently treating throttled
+    requests as evidence the phrase has zero clips.
+    """
+
+
 def _fetch(url: str, attempts: int = 3) -> list[str]:
-    """Single yarn HTTP request -> clip ids. Retries on timeout to ride
-    through Cloudflare throttling. Returns empty list after final failure."""
+    """Single yarn HTTP request -> clip ids. Retries on timeout/non-200 with
+    backoff, then raises YarnFetchError. A successful request returns the
+    parsed list (possibly empty if the phrase truly has no matches)."""
     import time as _t
+    last_exc: Exception | None = None
     for n in range(attempts):
         try:
             r = curl_requests.get(url, impersonate="chrome", headers=_HEADERS, timeout=12)
-        except Exception:
-            _t.sleep(0.5 * (n + 1))
-            continue
-        if r.status_code != 200:
-            return []
-        return _parse_clip_ids(r.text)
-    return []
+            if r.status_code == 200:
+                return _parse_clip_ids(r.text)
+            last_exc = YarnFetchError(f"HTTP {r.status_code} for {url}")
+        except Exception as e:
+            last_exc = e
+        _t.sleep(0.5 * (n + 1))
+    raise YarnFetchError(f"giving up on {url} after {attempts} attempts") from last_exc
 
 
 def _facet_urls(phrase: str) -> list[str]:
@@ -98,7 +110,9 @@ class YarnSearch:
         Use this when you only need to decide rare-vs-common — e.g. to
         force a single-word chunk in greedy splitting. A single HTTP call
         per word, no facet fan-out, no cache write (so `.search()` can
-        still do its full expansion later if needed).
+        still do its full expansion later if needed). Raises YarnFetchError
+        on hard failure so the caller can distinguish from a successful
+        empty response.
         """
         url = _BASE + quote(phrase)
         return len(_fetch(url, attempts=2))
@@ -116,7 +130,12 @@ class YarnSearch:
             return cached[:max_results]
 
         base_url = _BASE + quote(phrase)
-        base_ids = _fetch(base_url)
+        try:
+            base_ids = _fetch(base_url)
+        except YarnFetchError:
+            # Yarn unreachable for this phrase; let _try_chunk fall through
+            # to playphrase rather than caching a fake "no results" answer.
+            return []
 
         # Small pool — facet fan-out won't add anything meaningful. Skip the
         # extra ~22 requests entirely.
@@ -133,7 +152,13 @@ class YarnSearch:
         with ThreadPoolExecutor(max_workers=3) as pool:
             futures = [pool.submit(_fetch, u) for u in _facet_urls(phrase)]
             for fut in as_completed(futures):
-                for cid in fut.result():
+                try:
+                    new_ids = fut.result()
+                except YarnFetchError:
+                    # Individual facet timed out under throttling; skip it
+                    # and accept a slightly smaller merged pool.
+                    continue
+                for cid in new_ids:
                     if cid not in seen:
                         seen.add(cid)
                         merged.append(cid)

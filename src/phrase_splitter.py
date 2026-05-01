@@ -312,11 +312,10 @@ def _detect_rare_words(words: list[str], yarn: YarnSearch) -> set[str]:
     """Return the set of input words whose yarn pool is below the rarity
     threshold. Empty result means greedy can use full chunk lengths.
 
-    Uses YarnSearch.probe_count which costs one base HTTP call per unique
-    word (capped at 20), no facet fan-out. A word that returns exactly 20
-    is "common enough" and doesn't need exact pool sizing for this
-    decision; greedy will later trigger the full facet expansion when it
-    actually searches the word as part of a chunk.
+    Uses YarnSearch.probe_count (1 HTTP per unique word, capped at 20).
+    On a probe failure (e.g. yarn throttling) the word is skipped — we
+    err toward NOT marking it rare, because false-positive rarity would
+    force every word into 1-word chunks for the rest of the phrase.
     """
     rare: set[str] = set()
     seen: set[str] = set()
@@ -327,7 +326,8 @@ def _detect_rare_words(words: list[str], yarn: YarnSearch) -> set[str]:
         try:
             count = yarn.probe_count(w)
         except Exception:
-            count = 0
+            # Probe failed; assume common to keep greedy unrestricted.
+            continue
         if count < RARE_WORD_THRESHOLD:
             rare.add(w)
     return rare
