@@ -300,6 +300,37 @@ def _try_chunk(
     return None
 
 
+# Words whose yarn pool is below this threshold are forced to single-word
+# chunks. The rationale: if only N≪20 clips contain the word at all, the
+# chance any of them also contain a multi-word phrase including it is near
+# zero, so 6→5→4→...→1 greedy descent on a chunk containing such a word
+# wastes minutes on guaranteed misses.
+RARE_WORD_THRESHOLD = 20
+
+
+def _detect_rare_words(words: list[str], yarn: YarnSearch) -> set[str]:
+    """Return the set of input words whose yarn pool is below the rarity
+    threshold. Empty result means greedy can use full chunk lengths.
+
+    Uses YarnSearch's internal per-process cache: each unique word is
+    fetched once here and reused later when greedy actually searches it,
+    so probing adds no extra HTTP cost over a normal run.
+    """
+    rare: set[str] = set()
+    seen: set[str] = set()
+    for w in words:
+        if w in seen:
+            continue
+        seen.add(w)
+        try:
+            count = len(yarn.search(w))
+        except Exception:
+            count = 0
+        if count < RARE_WORD_THRESHOLD:
+            rare.add(w)
+    return rare
+
+
 def greedy_split(
     phrase: str,
     yarn: YarnSearch,
@@ -312,6 +343,10 @@ def greedy_split(
     on_step(stage, **kwargs) is an optional progress callback.
     """
     words = _tokenize(phrase)
+    rare = _detect_rare_words(words, yarn) if len(words) > 1 else set()
+    if rare and on_step:
+        on_step("rare", words=sorted(rare))
+
     chunks: list[Chunk] = []
     skipped: list[str] = []
 
@@ -319,6 +354,17 @@ def greedy_split(
     n = len(words)
     while i < n:
         max_len = min(max_chunk, n - i)
+        # Rarity-aware chunk-length cap: rare words get isolated as
+        # single-word chunks, and surrounding chunks are clipped so they
+        # end BEFORE the rare word rather than spanning it.
+        if words[i] in rare:
+            max_len = 1
+        else:
+            for k in range(1, max_len):
+                if words[i + k] in rare:
+                    max_len = k
+                    break
+
         found: Chunk | None = None
         for L in range(max_len, 0, -1):
             chunk_words = words[i : i + L]

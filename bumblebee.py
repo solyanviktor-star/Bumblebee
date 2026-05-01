@@ -63,6 +63,8 @@ def _on_step(stage: str, **kw):
         print(f"      + {c.text!r}  <-  {c.clip_id[:8]}  [{c.start:.2f}-{c.end:.2f}s]")
     elif stage == "skip":
         print(f"      - {kw['word']!r} not found in any clip, skipping")
+    elif stage == "rare":
+        print(f"      ! rare words (forcing single-word chunks): {kw['words']}")
 
 
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
