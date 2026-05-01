@@ -68,13 +68,34 @@ pip install -r requirements.txt
 
 You also need **FFmpeg** on PATH (or set `FFMPEG_BIN` to its path).
 
-That's it. No API keys, no `.env`, nothing else to configure. The first run downloads the Whisper model (~244 MB for `small.en`) into the HuggingFace cache; every run after that is fully offline.
+### Strongly recommended: playwright + Chromium
+
+Bumblebee uses [playphrase.me](https://www.playphrase.me) as an automatic
+secondary source whenever yarn.co fails to cover a chunk. playphrase has
+10x-1000x more clips per phrase, so installing it dramatically improves
+coverage on rare words and longer phrases. Without it, those words get
+skipped and Bumblebee asks the orchestrator to substitute a synonym.
+
+```bash
+pip install playwright
+playwright install chromium    # one-time, ~120 MB
+```
+
+The Chromium bootstrap (~10-15s) runs lazily — only on the first yarn miss
+of a given run, never if yarn covers the whole phrase. If you skip this
+step, Bumblebee still works in yarn-only mode; you can also force-disable
+playphrase per run with `--no-playphrase`.
+
+That's it. No API keys, no `.env`, nothing else to configure. The first run
+downloads the Whisper model (~244 MB for `small.en`) into the HuggingFace
+cache; every run after that is fully offline.
 
 ## Requirements
 
 - Python 3.9+
 - FFmpeg
 - ~250 MB free disk space for the speech model
+- **Recommended:** playwright + Chromium (~120 MB) for the playphrase fallback
 
 No GPU required. If you have a CUDA GPU, set `WHISPER_DEVICE=cuda` for a roughly 5x speedup on transcription.
 
@@ -104,15 +125,9 @@ entirely.
 
 The fallback is **lazy**: the headless Chromium bootstrap (~10-15s, one-time
 per run) only runs if yarn actually misses. Phrases that yarn covers fully
-never touch playwright. To enable it, install playwright once:
-
-```bash
-pip install playwright
-playwright install chromium    # one-time, ~120 MB
-```
-
-After that, every run uses playphrase as needed — no flag required. To stay
-yarn-only (e.g. on a machine without Chromium), pass `--no-playphrase`.
+never touch playwright. See the [Install](#install) section for the one-time
+playwright + Chromium setup; once installed, every run uses playphrase as
+needed. Pass `--no-playphrase` to force-disable it for a single run.
 
 ## Optional environment variables
 
