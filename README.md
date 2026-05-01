@@ -93,24 +93,26 @@ python bumblebee.py "Sentient is the best" -o sentient.mp4 --variants 5
 
 The final file lands in `output/<name>.mp4`.
 
-## Optional: extra source via playphrase.me
+## Second source: playphrase.me (automatic)
 
-yarn.co's public HTML is hard-capped at 20 unique clips per phrase. Pass
-`--playphrase` to layer in [playphrase.me](https://www.playphrase.me) as a
-secondary source, which often has 10x-1000x more matches per phrase
-(e.g. 73,000 clips for "open" vs yarn's 20). It triggers only when yarn
-exhausts a chunk, and its API delivers word-timestamps natively so playphrase
-clips skip the faster-whisper step entirely.
+yarn.co's public HTML is hard-capped at 20 unique clips per phrase. When yarn
+fails to cover a chunk, Bumblebee automatically falls back to
+[playphrase.me](https://www.playphrase.me), which often has 10x-1000x more
+matches (73,000 clips for "open" vs yarn's 20). Its API delivers
+word-timestamps natively, so playphrase clips skip the faster-whisper step
+entirely.
+
+The fallback is **lazy**: the headless Chromium bootstrap (~10-15s, one-time
+per run) only runs if yarn actually misses. Phrases that yarn covers fully
+never touch playwright. To enable it, install playwright once:
 
 ```bash
 pip install playwright
 playwright install chromium    # one-time, ~120 MB
-
-python bumblebee.py "any phrase" --playphrase
 ```
 
-Costs ~15 seconds upfront for browser bootstrap; each subsequent search is
-sub-second.
+After that, every run uses playphrase as needed — no flag required. To stay
+yarn-only (e.g. on a machine without Chromium), pass `--no-playphrase`.
 
 ## Optional environment variables
 

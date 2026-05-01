@@ -29,8 +29,14 @@ A skill that automatically assembles a fragmovie-style video from an arbitrary p
 ```bash
 python bumblebee.py "I am your father" -o father.mp4
 python bumblebee.py "Sentient is the best" -o sentient.mp4 --variants 5
-python bumblebee.py "long phrase here" --variants 5 --playphrase
+python bumblebee.py "long phrase here" --variants 5
 ```
+
+playphrase.me is consulted automatically the first time yarn fails to cover a
+chunk — no flag needed. The browser bootstrap (~10-15s, one-time per run)
+only happens if yarn actually misses; phrases yarn covers fully never touch
+playwright. Pass `--no-playphrase` to stay yarn-only (e.g. when playwright
+isn't installed).
 
 ## Handling unreachable words (intelligent synonym substitution)
 
@@ -53,8 +59,8 @@ recover them. **Do not call any TTS or generate fake audio.** Instead:
    - `blockchain` → `network` / `ledger` (depending on the framing)
 3. Briefly tell the user which words were unreachable and which synonyms
    you chose, so they can override if your choice changes the meaning.
-4. Re-run bumblebee with the substituted phrase, the same `--variants` and
-   `--playphrase` flags as the original run.
+4. Re-run bumblebee with the substituted phrase, keeping the same `--variants`
+   value as the original run.
 5. If the second run still has skipped words, repeat the substitution loop
    on those — but stop after at most two retries to avoid drifting too far
    from the user's original phrase.
@@ -69,7 +75,8 @@ when to substitute and what to substitute with.
 - `src/downloader.py` — mp4 download via curl_cffi (yarn.co requires a Chrome TLS fingerprint)
 - `src/transcriber.py` — faster-whisper local inference + word-timestamps + JSON cache
 - `src/word_matcher.py` — exact match with apostrophe / prefix fuzzing
-- `src/phrase_splitter.py` — greedy longest-match, optional shuffling and clip exclusion for variants
+- `src/phrase_splitter.py` — greedy longest-match, lazy playphrase fallback on yarn miss, optional shuffling and clip exclusion for variants
+- `src/playphrase_search.py` — Playwright-based playphrase.me adapter (lazy-init)
 - `src/cutter.py` — FFmpeg cut with audio fade at splice points
 - `src/concat.py` — concat demuxer
 

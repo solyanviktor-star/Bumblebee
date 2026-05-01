@@ -47,20 +47,62 @@ _EXCLUDED: set[str] = set()
 # redoing the same fruitless yarn + transcribe round-trips on later variants.
 _NEGATIVE_CACHE: set[str] = set()
 
-# Optional second source. When set (via set_playphrase), greedy queries it
-# after yarn exhausts a chunk. playphrase clips arrive with word-level
-# timestamps from the API itself, so they don't need a faster-whisper pass.
+# Secondary source, lazily initialised on first yarn miss. playphrase clips
+# arrive with word-level timestamps from the API itself, so they don't need a
+# faster-whisper pass. The browser bootstrap is ~10-15s and only paid if yarn
+# actually fails to cover some chunk; phrases that yarn covers fully never
+# touch playwright.
 _PLAYPHRASE = None
+_PLAYPHRASE_DISABLED = False
 
 
-def set_playphrase(pp) -> None:
-    """Register a PlayPhraseSearch instance as a secondary source.
+def disable_playphrase() -> None:
+    """Permanently disable the lazy playphrase fallback for this process."""
+    global _PLAYPHRASE_DISABLED
+    _PLAYPHRASE_DISABLED = True
 
-    Pass `None` to disable. Caller owns the lifecycle (open the search
-    session in a `with` block and call this from inside).
+
+def _ensure_playphrase():
+    """Return a live PlayPhraseSearch, bootstrapping it on first call.
+
+    Returns None if playwright is missing, the bootstrap fails, or the user
+    has explicitly disabled the fallback. After a hard failure we set
+    `_PLAYPHRASE_DISABLED` so subsequent chunks don't retry the bootstrap.
     """
     global _PLAYPHRASE
+    if _PLAYPHRASE is not None:
+        return _PLAYPHRASE
+    if _PLAYPHRASE_DISABLED:
+        return None
+    try:
+        from .playphrase_search import PlayPhraseSearch
+    except ImportError:
+        print("        . playphrase unavailable: playwright not installed "
+              "(pip install playwright && playwright install chromium)")
+        disable_playphrase()
+        return None
+    print("        . yarn exhausted — bootstrapping playphrase (one-time, ~10-15s)")
+    try:
+        pp = PlayPhraseSearch()
+        pp.__enter__()
+    except Exception as e:
+        print(f"        ! playphrase bootstrap failed: {type(e).__name__}: {e}")
+        disable_playphrase()
+        return None
     _PLAYPHRASE = pp
+    return pp
+
+
+def cleanup_playphrase() -> None:
+    """Close the lazily-opened browser session if one was created."""
+    global _PLAYPHRASE
+    if _PLAYPHRASE is None:
+        return
+    try:
+        _PLAYPHRASE.__exit__(None, None, None)
+    except Exception:
+        pass
+    _PLAYPHRASE = None
 
 
 def add_excluded(ids) -> None:
@@ -209,12 +251,13 @@ def _try_chunk(
             else:
                 return result
 
-    # 4. Optional playphrase fallback. Triggered only when yarn produced no
-    # match — playphrase has a much larger pool especially for rare words,
-    # and its API delivers word-timestamps natively so we skip transcription.
-    if _PLAYPHRASE is not None:
+    # 4. Playphrase fallback — automatic when yarn yields no match. The
+    # browser is bootstrapped on first need and reused for the rest of the
+    # run; phrases yarn covers fully never trigger it.
+    pp = _ensure_playphrase()
+    if pp is not None:
         try:
-            pp_clips = _PLAYPHRASE.search(text, max_results=5)
+            pp_clips = pp.search(text, max_results=5)
         except Exception as e:
             print(f"        ! playphrase search failed for {text!r}: {e}")
             pp_clips = []

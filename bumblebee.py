@@ -12,6 +12,10 @@ clips are concatenated in order into output/<name>.mp4.
 Pipeline:
   greedy splitter: cut into the largest chunks (<=6 words) that exist in cinema
   -> for each chunk: yarn -> download -> Whisper word-timestamps -> exact match -> cut
+                     |
+                     +-> on yarn miss: lazily bootstrap playphrase.me (one-time
+                         ~10-15s) and retry the chunk against its larger pool.
+                         Disable with --no-playphrase.
   -> concat all parts -> output/final.mp4
 """
 from __future__ import annotations
@@ -40,7 +44,8 @@ _builtins.print = _flushed_print
 from src.concat import concat
 from src.cutter import cut
 from src.phrase_splitter import (
-    Chunk, add_excluded, greedy_split, reset_excluded, set_playphrase,
+    Chunk, add_excluded, cleanup_playphrase, disable_playphrase, greedy_split,
+    reset_excluded,
 )
 from src.yarn_search import YarnSearch
 
@@ -107,25 +112,21 @@ def main() -> int:
                         help="How many distinct variants to generate. >1 enables mix mode: every "
                              "variant avoids clips used by previous ones. Files are named "
                              "<output>_v1.mp4, _v2.mp4, ...")
-    parser.add_argument("--playphrase", action="store_true",
-                        help="Add playphrase.me as a second source via headless Playwright. "
-                             "Adds ~15s bootstrap; massively expands the pool for rare words "
-                             "(73k clips for 'open' vs yarn's 20). Requires playwright and a "
-                             "Chromium install (pip install playwright && playwright install chromium).")
+    parser.add_argument("--no-playphrase", action="store_true",
+                        help="Disable the automatic playphrase.me fallback. By default "
+                             "playphrase is bootstrapped lazily (~10-15s, one-time) the "
+                             "first time yarn fails to cover a chunk; pass this flag to "
+                             "stay yarn-only, e.g. when playwright/Chromium isn't installed.")
     args = parser.parse_args()
 
     if args.variants > 1:
         os.environ["BUMBLEBEE_SHUFFLE"] = "1"
 
+    if args.no_playphrase:
+        disable_playphrase()
+
     final_paths: list[Path] = []
     skipped_per_variant: list[list[str]] = []
-    pp_cm = None
-    if args.playphrase:
-        from src.playphrase_search import PlayPhraseSearch
-        pp_cm = PlayPhraseSearch()
-        pp_cm.__enter__()
-        set_playphrase(pp_cm)
-        print("playphrase: bootstrap done, secondary source active")
 
     try:
         with YarnSearch() as yarn:
@@ -157,9 +158,7 @@ def main() -> int:
                 if args.variants > 1:
                     add_excluded(used_full_ids)
     finally:
-        if pp_cm is not None:
-            set_playphrase(None)
-            pp_cm.__exit__(None, None, None)
+        cleanup_playphrase()
 
     # Machine-parseable summary so an orchestrator (e.g. Claude) can detect
     # words that were unreachable in any source and decide whether to retry
