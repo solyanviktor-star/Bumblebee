@@ -12,11 +12,17 @@ Give it any long phrase — it greedily cuts the line into the longest possible 
 
 ## Demo
 
-> *"Give it any long phrase. It greedily cuts the line into the longest possible runs of words that were actually spoken on screen. Then assembles a final clip from those pieces. Classic fragmovie genre, automated to the millisecond."*
+Four different phrases, each spliced word-by-word from real movies and TV
+shows. Every clip pulled from yarn.co + playphrase.me and normalised to a
+single 854x480 / 48 kHz container so the concat is seamless.
 
-https://github.com/user-attachments/assets/12d2992d-ec64-469f-be2c-aab94c52397e
+https://github.com/user-attachments/assets/aaac7153-b528-4906-828e-984418a5f2c9
 
-22 chunks across the four sentences, every spoken word from a different real movie or TV show, pulled from yarn.co + playphrase.me, normalised to a single 854x480 / 48 kHz container so the concat is seamless. The only word that didn't cover is *fragmovie* — no actor on record has ever said it.
+https://github.com/user-attachments/assets/cd7296c2-028d-43eb-b81a-1458bb7afb10
+
+https://github.com/user-attachments/assets/d9fcd4b9-a751-4ed7-b60a-60c9367c7cc8
+
+https://github.com/user-attachments/assets/23299a9b-47f7-4f91-8417-abd410d4ee8a
 
 ## Install as an Agent Skill
 
