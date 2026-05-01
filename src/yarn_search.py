@@ -52,15 +52,20 @@ def _parse_clip_ids(html: str) -> list[str]:
     return ids
 
 
-def _fetch(url: str) -> list[str]:
-    """Single yarn HTTP request -> clip ids. Failures yield an empty list."""
-    try:
-        r = curl_requests.get(url, impersonate="chrome", headers=_HEADERS, timeout=30)
-    except Exception:
-        return []
-    if r.status_code != 200:
-        return []
-    return _parse_clip_ids(r.text)
+def _fetch(url: str, attempts: int = 3) -> list[str]:
+    """Single yarn HTTP request -> clip ids. Retries on timeout to ride
+    through Cloudflare throttling. Returns empty list after final failure."""
+    import time as _t
+    for n in range(attempts):
+        try:
+            r = curl_requests.get(url, impersonate="chrome", headers=_HEADERS, timeout=12)
+        except Exception:
+            _t.sleep(0.5 * (n + 1))
+            continue
+        if r.status_code != 200:
+            return []
+        return _parse_clip_ids(r.text)
+    return []
 
 
 def _facet_urls(phrase: str) -> list[str]:
@@ -86,6 +91,18 @@ class YarnSearch:
     def __exit__(self, *exc):
         pass
 
+    def probe_count(self, phrase: str) -> int:
+        """Cheap rarity probe: returns the size of yarn's first-page pool
+        for a phrase, capped at 20.
+
+        Use this when you only need to decide rare-vs-common — e.g. to
+        force a single-word chunk in greedy splitting. A single HTTP call
+        per word, no facet fan-out, no cache write (so `.search()` can
+        still do its full expansion later if needed).
+        """
+        url = _BASE + quote(phrase)
+        return len(_fetch(url, attempts=2))
+
     def search(self, phrase: str, max_results: int = 200) -> list[str]:
         """Return clip_ids for the phrase. Empty list = nothing matched.
 
@@ -108,9 +125,12 @@ class YarnSearch:
             return base_ids[:max_results]
 
         # Large pool likely capped at 20 by the page renderer; expand it.
+        # max_workers=3 stays under yarn/Cloudflare's silent connection
+        # throttle (which kicks in around 5+ simultaneous requests from
+        # the same IP) and finishes the 22-URL fan-out in ~10-15s.
         merged: list[str] = list(base_ids)
         seen: set[str] = set(base_ids)
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             futures = [pool.submit(_fetch, u) for u in _facet_urls(phrase)]
             for fut in as_completed(futures):
                 for cid in fut.result():
