@@ -54,7 +54,12 @@ def cut(
     fade_in = 0.012
     fade_out = 0.18 if is_sentence_end else 0.025
     fade_out_start = max(0.0, duration - fade_out)
+    # Single-pass EBU R128 loudness normalisation. -16 LUFS is the typical
+    # short-form target (TikTok / YouTube Shorts), -1.5 dB TP keeps a small
+    # headroom against clipping. Runs BEFORE afades so the fades operate
+    # on already-levelled audio (no perceived volume spike at splice).
     afilter = (
+        "loudnorm=I=-16:TP=-1.5:LRA=11,"
         f"afade=t=in:st=0:d={fade_in:.3f},"
         f"afade=t=out:st={fade_out_start:.3f}:d={fade_out:.3f}"
     )
