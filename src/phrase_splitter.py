@@ -239,7 +239,13 @@ def _try_chunk(
                 clip_ids = filtered
         print(f"        . yarn: {len(clip_ids)} ids for {text!r}")
 
-        for clip_id in clip_ids:
+        # Bound the search: yarn's facet-expanded pool can be 100-200 ids,
+        # most of which are no-match (e.g. "collection" vs target "collections").
+        # Transcribing every one with Whisper is multi-minute work per chunk.
+        # Try a deeper-but-bounded slice; rely on shuffle + _EXCLUDED to give
+        # later variants different samples from the full pool.
+        max_attempts = 40
+        for clip_id in clip_ids[:max_attempts]:
             result = _check_candidate(clip_id, text, cache_dir)
             if result is None:
                 # log what the transcript actually contained — useful for debugging
