@@ -12,9 +12,11 @@ Give it any long phrase — it greedily cuts the line into the longest possible 
 
 ## Demo
 
-Four different phrases, each spliced word-by-word from real movies and TV
-shows. Every clip pulled from yarn.co + playphrase.me and normalised to a
-single 854x480 / 48 kHz container so the concat is seamless.
+> *"Sentient is the best company in the world."*
+
+Four variants of the same phrase, each spliced word-by-word from real movies
+and TV shows. Every clip pulled from yarn.co + playphrase.me and normalised
+to a single 854x480 / 48 kHz container so the concat is seamless.
 
 https://github.com/user-attachments/assets/aaac7153-b528-4906-828e-984418a5f2c9
 
