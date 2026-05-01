@@ -20,8 +20,10 @@ Optimisations on top of the base algorithm:
   for any other chunk whose words happen to appear in its transcript.
 - Negative cache: phrases that yielded zero exact matches anywhere are not
   re-attempted within the same process — cuts redundant network and Whisper work.
-- Wide candidate fan-out: we ask yarn for the maximum 20 ids per phrase
-  (yarn caps any single search at 20).
+- Wide candidate fan-out: yarn's web pages cap a single search at 20 clips,
+  but our YarnSearch fans out across decades/rateds/genres facets in parallel
+  and merges the results, typically reaching ~100 unique clips for popular
+  words.
 """
 from __future__ import annotations
 
@@ -150,8 +152,8 @@ def _scan_local_cache(text: str, cache_dir: Path, excluded: set[str]) -> list[Ch
 
     A clip we downloaded for a different chunk often contains shorter target
     phrases for free. This expands our effective candidate pool by 5-10x and,
-    crucially, gives us fresh clips to use across variants without ever
-    hitting yarn's hard 20-result ceiling.
+    crucially, gives us fresh clips to use across variants without re-hitting
+    yarn for every chunk.
     """
     if not cache_dir.exists():
         return []
@@ -178,7 +180,7 @@ def _try_chunk(
     chunk_words: list[str],
     yarn: YarnSearch,
     cache_dir: Path,
-    max_candidates: int = 20,
+    max_candidates: int = 200,
 ) -> Chunk | None:
     """Is there a clip where this subsequence is spoken in order?
 
