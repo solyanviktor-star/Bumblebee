@@ -15,6 +15,23 @@ _TOKEN_RE = re.compile(r"[a-z0-9']+")
 _PAD_BEFORE = 0.015  # 15 ms — minimum, so the attack of the sound isn't clipped
 _PAD_AFTER = 0.030   # 30 ms — short tail so the trailing phoneme stays intact
 
+# Whisper sometimes returns a word with `end == start` (or near-zero duration)
+# when its forced alignment can't pin the boundaries — usually because the
+# word is mumbled, swallowed by the next word, or the audio doesn't actually
+# contain it (small.en hallucinates short tokens like 'thank', 'a', 'the').
+# Cuts driven by such timestamps produce silence or the wrong syllable, so
+# we treat those matches as invalid.
+_MIN_WORD_DURATION = 0.04  # seconds — anything shorter is almost certainly misalignment
+
+
+def _has_plausible_durations(words: list[dict], start_idx: int, length: int) -> bool:
+    """True if every matched word has a non-degenerate duration."""
+    for j in range(length):
+        w = words[start_idx + j]
+        if (w["end"] - w["start"]) < _MIN_WORD_DURATION:
+            return False
+    return True
+
 
 @dataclass
 class Match:
@@ -65,6 +82,8 @@ def find_phrase(words: list[dict], phrase: str) -> Match | None:
     # 1. Exact (with apostrophe / prefix fuzz) match of the full target in order
     for i in range(len(transcript) - n_t + 1):
         if all(_word_eq(target[j], transcript[i + j]) for j in range(n_t)):
+            if not _has_plausible_durations(words, i, n_t):
+                continue
             return Match(
                 start=max(0.0, words[i]["start"] - _PAD_BEFORE),
                 end=words[i + n_t - 1]["end"] + _PAD_AFTER,
@@ -81,8 +100,9 @@ def find_phrase(words: list[dict], phrase: str) -> Match | None:
                    and j + k < n_t
                    and _word_eq(target[j + k], transcript[i + k])):
                 k += 1
-            if k > 0 and (best is None or k > best[0]):
-                best = (k, i, i + k - 1)
+            if k > 0 and _has_plausible_durations(words, i, k):
+                if best is None or k > best[0]:
+                    best = (k, i, i + k - 1)
 
     if best is None:
         return None
